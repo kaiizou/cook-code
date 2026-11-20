@@ -6,18 +6,16 @@ import { drawFarm } from "./PlantRenderer.js";
 // Semua visual masih placeholder pixel art dari kotak berwarna.
 
 export class GameScreen {
-  constructor(canvas, world, character, farming) {
+  constructor(canvas, world, character, farming, inventory, cooking) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.ctx.imageSmoothingEnabled = false;
     this.world = world;
     this.character = character;
     this.farming = farming;
+    this.inventory = inventory;
+    this.cooking = cooking;
     this.time = 0;
-
-    // Data sementara untuk HUD (nanti diambil dari Currency & Inventory System)
-    this.currency = CONFIG.START.CURRENCY;
-    this.inventory = { carrot: 0, tomato: 0, potato: 0, corn: 0 };
   }
 
   update(dt) {
@@ -37,6 +35,7 @@ export class GameScreen {
     this._drawGardenLabel(c);
     this._drawStations(c);
     this._drawChef(c);
+    this._drawCookingEffects(c);
     this._drawHUD(c, W);
     if (CONFIG.DEBUG) this._drawDebug(c, W, H);
   }
@@ -202,25 +201,47 @@ export class GameScreen {
     }
   }
 
+  // ---------- Efek Pop-up Memasak & Menjual (Tahap 8) ----------
+  _drawCookingEffects(c) {
+    if (!this.cooking || !this.cooking.effects.length) return;
+    const T = CONFIG.WORLD.TILE;
+    c.font = "bold 13px 'Courier New', monospace";
+    c.textAlign = "center";
+    c.textBaseline = "alphabetic";
+
+    for (const e of this.cooking.effects) {
+      const x = e.col * T + T / 2;
+      const y = e.row * T - 8 - e.t * 22;
+      c.globalAlpha = Math.max(0, 1 - e.t / 1.5);
+      c.fillStyle = "rgba(0,0,0,0.85)";
+      c.fillText(e.text, x + 1, y + 1);
+      c.fillStyle = e.color;
+      c.fillText(e.text, x, y);
+    }
+    c.globalAlpha = 1;
+    c.textAlign = "left";
+  }
+
   // ---------- HUD ----------
   _drawHUD(c, W) {
     const H = CONFIG.WORLD.TILE * CONFIG.WORLD.HUD_ROWS;
     c.fillStyle = "rgba(90,58,34,0.95)";
     c.fillRect(0, 0, W, H);
 
-    c.font = "bold 16px 'Courier New', monospace";
+    c.font = "bold 15px 'Courier New', monospace";
     c.textAlign = "left";
     c.textBaseline = "middle";
     c.fillStyle = "#ffd75e";
-    c.fillText(`💰 ${this.currency}`, 12, H / 2);
+    const coins = this.inventory ? this.inventory.currency : 0;
+    c.fillText(`💰 ${coins}`, 12, H / 2);
 
     c.fillStyle = "#fff";
-    const inv = this.inventory;
-    c.fillText(
-      `🥕${inv.carrot}  🍅${inv.tomato}  🥔${inv.potato}  🌽${inv.corn}`,
-      W - 290,
-      H / 2
-    );
+    if (this.inventory) {
+      const inv = this.inventory;
+      const cropsText = `🥕${inv.get("carrot")} 🍅${inv.get("tomato")} 🥔${inv.get("potato")} 🌽${inv.get("corn")}`;
+      const dishesText = `🥗${inv.get("salad")} 🍲${inv.get("soup")} 🍟${inv.get("fries")}`;
+      c.fillText(`${cropsText}   |   ${dishesText}`, W - 440, H / 2);
+    }
   }
 
   _drawDebug(c, W, H) {

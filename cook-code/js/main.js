@@ -3,14 +3,16 @@ import { GameEngine } from "./core/GameEngine.js";
 import { World } from "./systems/World.js";
 import { Character } from "./systems/Character.js";
 import { Farming } from "./systems/Farming.js";
+import { Inventory } from "./systems/Inventory.js";
+import { Cooking } from "./systems/Cooking.js";
 import { GameScreen } from "./ui/GameScreen.js";
 import { UIManager } from "./ui/UIManager.js";
 import { BlockEditor } from "./editor/BlockEditor.js";
 import { Interpreter } from "./editor/Interpreter.js";
 import { validateProgram, describeBlock } from "./editor/validator.js";
 
-// Blok yang efek aslinya baru dibuat di Tahap 7-8. Untuk sekarang hanya menyala sebentar.
-const STUB_IDS = ["sell", "cook"];
+// Tidak ada lagi blok stub di Tahap 8 (semua blok dasar sudah aktif).
+const STUB_IDS = [];
 
 function init() {
   const engine = new GameEngine();
@@ -18,7 +20,9 @@ function init() {
   const world = new World();
   const character = new Character(world);
   const farming = new Farming(world);
-  const gameScreen = new GameScreen(document.getElementById("game-canvas"), world, character, farming);
+  const inventory = new Inventory();
+  const cooking = new Cooking(world, inventory);
+  const gameScreen = new GameScreen(document.getElementById("game-canvas"), world, character, farming, inventory, cooking);
 
   const ui = new UIManager();
   let editor = null;
@@ -48,12 +52,18 @@ function init() {
     check: action(() => farming.check(character.col, character.row), 0.8),
     harvest: action(() => {
       const res = farming.harvest(character.col, character.row);
-      if (res.ok) gameScreen.inventory[res.crop]++; // sementara; Inventory System di Tahap 7
+      if (res.ok) {
+        inventory.add(res.crop, 1);
+        const info = inventory.getItemInfo(res.crop);
+        ui.setStatus(`Panen berhasil! +1 ${info.name} (${info.icon}) disimpan di inventori.`, "info");
+      }
       return res;
     }),
+    cook: action((b) => cooking.cook(b.params.recipe, character.col, character.row), 0.8),
+    sell: action((b) => cooking.sell(b.params.item, character.col, character.row), 0.6),
   };
 
-  // Handler sementara untuk blok yang belum punya efek
+  // Handler sementara untuk blok yang belum punya efek (jika ada)
   for (const id of STUB_IDS) {
     handlers[id] = async (block, api) => {
       const finished = await api.sleep(0.5);
@@ -85,9 +95,10 @@ function init() {
     },
   });
 
-  // Urutan penting: karakter, farming, interpreter, lalu render layar
+  // Urutan penting: karakter, farming, cooking, interpreter, lalu render layar
   engine.register(character);
   engine.register(farming);
+  engine.register(cooking);
   engine.register(interpreter);
   engine.register(gameScreen);
 
@@ -130,11 +141,11 @@ function init() {
     onMessage: (text, type) => ui.setStatus(text, type),
   });
 
-  if (CONFIG.DEBUG) window.__cc = { world, character, farming, editor, interpreter };
+  if (CONFIG.DEBUG) window.__cc = { world, character, farming, inventory, cooking, editor, interpreter };
 
-  ui.setStatus("Tahap 6 siap. Susun blok, jalankan ke kebun, lalu tanam!", "info");
+  ui.setStatus("Tahap 8 siap: Dapur & Pasar aktif. Masak hidangan di kompor/meja dan jual di pasar!", "info");
   engine.start();
-  console.log(`${CONFIG.GAME_NAME} v${CONFIG.VERSION} - Tahap 6 siap.`);
+  console.log(`${CONFIG.GAME_NAME} v${CONFIG.VERSION} - Tahap 8 siap (Cooking & Market System).`);
 }
 
 init();
