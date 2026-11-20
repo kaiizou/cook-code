@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code & Cook</title>
+  <link rel="stylesheet" href="css/main.css" />
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- LAYAR UTAMA (besar) -->
+    <section id="game-screen">
+      <canvas id="game-canvas" width="800" height="600"></canvas>
+    </section>
+
+    <!-- LAYAR CODING (kecil) -->
+    <section id="code-screen">
+      <header class="code-header">
+        <h2>🧩 Kode</h2>
+        <div class="code-buttons">
+          <button id="btn-run" class="btn run">▶ RUN</button>
+          <button id="btn-stop" class="btn stop">■ STOP</button>
+          <button id="btn-clear" class="btn clear">🗑</button>
+        </div>
+      </header>
+
+      <div class="code-body">
+        <aside id="palette">
+          <h3>Blok</h3>
+          <div id="palette-list"></div>
+        </aside>
+
+        <div id="workspace">
+          <div id="stack"></div>
+          <p id="stack-hint" class="stack-hint">Seret blok dari kiri ke bawah <b>Start</b></p>
+        </div>
+      </div>
+
+      <div id="block-info">
+        <strong>Info blok</strong>
+        <p>Klik sebuah blok di palette untuk melihat fungsinya.</p>
+      </div>
+
+      <div id="status-bar" class="info">Siap.</div>
+    </section>
+
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+
+</html>
