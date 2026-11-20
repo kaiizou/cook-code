@@ -3,7 +3,8 @@
 
 const DIRS = [["up", "Atas"], ["down", "Bawah"], ["left", "Kiri"], ["right", "Kanan"]];
 const CROPS = [["carrot", "Wortel"], ["tomato", "Tomat"], ["potato", "Kentang"], ["corn", "Jagung"]];
-const SELLABLE = [["all", "Semua"], ...CROPS];
+const DISHES = [["salad", "Salad 🥗"], ["soup", "Sup sayur 🍲"], ["fries", "Kentang goreng 🍟"]];
+const SELLABLE = [["all", "Semua Barang"], ...DISHES, ...CROPS];
 const RECIPES = [["salad", "Salad"], ["soup", "Sup sayur"], ["fries", "Kentang goreng"]];
 
 export const BLOCK_DEFS = [
@@ -51,13 +52,13 @@ export const BLOCK_DEFS = [
 
   {
     id: "sell", name: "Sell", category: "basic", color: "#e6a817",
-    desc: "Menjual hasil panen untuk mendapatkan currency.",
+    desc: "Menjual hasil panen atau masakan di Pasar untuk mendapatkan koin.",
     params: [{ key: "item", type: "select", options: SELLABLE, default: "all" }]
   },
 
   {
     id: "cook", name: "Cook", category: "basic", color: "#e8613a",
-    desc: "Memasak bahan makanan menjadi hidangan sesuai resep.",
+    desc: "Memasak bahan makanan menjadi hidangan sesuai resep (di Kompor/Meja).",
     params: [{ key: "recipe", type: "select", options: RECIPES, default: "salad" }]
   },
 

@@ -3,7 +3,7 @@
 
 export const CONFIG = Object.freeze({
   GAME_NAME: "Code & Cook",
-  VERSION: "0.6.0",
+  VERSION: "0.8.0",
   SAVE_KEY: "codeAndCook_save_v1",
 
   // true = tampilkan info debug di canvas dan aktifkan kontrol keyboard uji.
@@ -50,11 +50,46 @@ export const CONFIG = Object.freeze({
     TIME_SCALE: 1,     // untuk uji coba: isi 3 agar semua waktu berjalan 3x lebih cepat
   },
 
-  // Waktu tumbuh (detik), bisa diubah saat balancing
+  // Waktu tumbuh (detik), ikon, dan harga jual bahan mentah
   CROPS: {
-    carrot: { name: "Wortel", growTime: 15 },
-    tomato: { name: "Tomat", growTime: 20 },
-    potato: { name: "Kentang", growTime: 25 },
-    corn: { name: "Jagung", growTime: 30 },
+    carrot: { name: "Wortel", icon: "🥕", growTime: 15, sellPrice: 5 },
+    tomato: { name: "Tomat", icon: "🍅", growTime: 20, sellPrice: 10 },
+    potato: { name: "Kentang", icon: "🥔", growTime: 25, sellPrice: 16 },
+    corn: { name: "Jagung", icon: "🌽", growTime: 30, sellPrice: 22 },
+  },
+
+  // Daftar hidangan matang (Tahap 8)
+  DISHES: {
+    salad: { name: "Salad", icon: "🥗", sellPrice: 25 },
+    soup: { name: "Sup sayur", icon: "🍲", sellPrice: 65 },
+    fries: { name: "Kentang goreng", icon: "🍟", sellPrice: 45 },
+  },
+
+  // Formula resep masakan & aturan stasiun dapur (Tahap 8)
+  RECIPES: {
+    salad: {
+      name: "Salad",
+      icon: "🥗",
+      station: ["stove", "table"], // bisa di meja atau kompor
+      ingredients: { carrot: 1, tomato: 1 },
+      sellPrice: 25,
+      desc: "1 Wortel + 1 Tomat",
+    },
+    soup: {
+      name: "Sup sayur",
+      icon: "🍲",
+      station: ["stove"], // harus di kompor
+      ingredients: { carrot: 1, potato: 1, corn: 1 },
+      sellPrice: 65,
+      desc: "1 Wortel + 1 Kentang + 1 Jagung",
+    },
+    fries: {
+      name: "Kentang goreng",
+      icon: "🍟",
+      station: ["stove"], // harus di kompor
+      ingredients: { potato: 2 },
+      sellPrice: 45,
+      desc: "2 Kentang",
+    },
   },
 });
