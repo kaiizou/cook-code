@@ -6,9 +6,12 @@ import { Farming } from "./systems/Farming.js";
 import { Inventory } from "./systems/Inventory.js";
 import { Cooking } from "./systems/Cooking.js";
 import { Unlocks } from "./systems/Unlocks.js";
+import { Missions } from "./systems/Missions.js";
+import { SaveManager } from "./systems/SaveManager.js";
 import { GameScreen } from "./ui/GameScreen.js";
 import { UIManager } from "./ui/UIManager.js";
 import { ShopUI } from "./ui/ShopUI.js";
+import { MissionUI } from "./ui/MissionUI.js";
 import { BlockEditor } from "./editor/BlockEditor.js";
 import { Interpreter } from "./editor/Interpreter.js";
 import { validateProgram, describeBlock, describeProgram } from "./editor/validator.js";
@@ -22,6 +25,7 @@ function init() {
   const inventory = new Inventory();
   const cooking = new Cooking(world, inventory);
   const unlocks = new Unlocks(inventory);
+  const missions = new Missions(inventory);
   const gameScreen = new GameScreen(
     document.getElementById("game-canvas"),
     world, character, farming, inventory, cooking
@@ -29,6 +33,10 @@ function init() {
 
   const ui = new UIManager();
   let editor = null;
+  let save = null;
+  let lastProgram = null; // program yang sedang/terakhir dijalankan (untuk cek misi)
+
+  inventory.onChange(() => save?.request());
 
   function setRunUI(running) {
     ui.btnRun.disabled = running;
@@ -73,13 +81,18 @@ function init() {
   }
 
   const handlers = {
-    plant: action((b) => farming.plant(character.col, character.row, b.params.crop)),
+    plant: action((b) => {
+      const res = farming.plant(character.col, character.row, b.params.crop);
+      if (res.ok) missions.record("plant", { col: character.col, row: character.row });
+      return res;
+    }),
     water: action(() => farming.water(character.col, character.row)),
     check: action(() => farming.check(character.col, character.row), 0.8),
     harvest: action(() => {
       const res = farming.harvest(character.col, character.row);
       if (res.ok) {
         inventory.add(res.crop, 1);
+        missions.record("harvest", { crop: res.crop });
         const info = inventory.getItemInfo(res.crop);
         ui.setStatus(`Panen berhasil! +1 ${info.name} (${info.icon}) disimpan di inventori.`, "info");
       }
@@ -88,6 +101,24 @@ function init() {
     cook: action((b) => cooking.cook(b.params.recipe, character.col, character.row), 0.8),
     sell: action((b) => cooking.sell(b.params.item, character.col, character.row), 0.6),
   };
+
+  // Hasil pemeriksaan misi setelah program selesai
+  function announceMission(ev) {
+    if (!ev) return;
+    if (ev.passed && ev.firstTime) {
+      ui.setStatus(`🎉 Level ${ev.level} selesai! +${ev.reward} koin.`, "ok");
+      missionUI.open(
+        `🎉 Level ${ev.level} selesai! Hadiah +💰 ${ev.reward}. ` +
+        (missions.allDone
+          ? "Semua level selesai, sekarang bebas bereksperimen!"
+          : "Level berikutnya sudah terbuka.")
+      );
+    } else if (ev.passed) {
+      ui.setStatus(`Level ${ev.level} tercapai lagi (hadiah hanya diberikan sekali).`, "ok");
+    } else {
+      ui.setStatus(`Program selesai, tetapi misi belum tercapai: ${ev.failed[0]}.`, "info");
+    }
+  }
 
   const interpreter = new Interpreter({
     character,
@@ -103,6 +134,7 @@ function init() {
 
       if (result.status === "done") {
         ui.setStatus(`Program selesai. ${result.count} aksi dijalankan.`, "ok");
+        announceMission(missions.evaluate(lastProgram));
       } else if (result.status === "stopped") {
         ui.setStatus("Program dihentikan.", "ok");
       } else {
@@ -110,6 +142,7 @@ function init() {
         ui.showErrors([{ message: result.message }]);
         ui.setStatus(result.message, "error");
       }
+      save?.request();
     },
   });
 
@@ -117,7 +150,27 @@ function init() {
     inventory,
     unlocks,
     onMessage: (text, type) => ui.setStatus(text, type),
-    onUnlock: () => ui.refreshPalette(),
+    onUnlock: () => {
+      ui.refreshPalette();
+      save?.request();
+    },
+  });
+
+  const missionUI = new MissionUI({
+    missions,
+    onGardenReset() {
+      if (interpreter.running) {
+        ui.setStatus("Hentikan program dulu sebelum mengosongkan kebun.", "error");
+        return;
+      }
+      farming.reset();
+      ui.setStatus("Kebun dikosongkan. Semua petak siap ditanami lagi.", "ok");
+      save?.request();
+    },
+    onProgressReset() {
+      if (!confirm("Hapus semua progres (koin, blok, misi, kebun, dan program)? Tidak bisa dibatalkan.")) return;
+      save.reset();
+    },
   });
 
   // Urutan penting: karakter, farming, cooking, interpreter, toko, lalu render layar
@@ -145,6 +198,8 @@ function init() {
 
       ui.showSequence(describeProgram(program));
       character.reset(); // setiap RUN dimulai dari posisi awal (tanaman tidak direset)
+      lastProgram = program;
+      missions.beginRun();
       setRunUI(true);
       interpreter.run(program);
     },
@@ -166,15 +221,47 @@ function init() {
     palette: document.getElementById("palette"),
     isUnlocked: (id) => unlocks.isUnlocked(id),
     onMessage: (text, type) => ui.setStatus(text, type),
+    onChange: () => save?.request(),
   });
 
+  // ---- Simpan dan muat progres (Tahap 10) ----
+  const indicator = document.getElementById("save-indicator");
+  save = new SaveManager({
+    inventory, unlocks, farming, missions, editor,
+    onSaved(date) {
+      indicator.textContent = "💾 " + date.toLocaleTimeString("id-ID", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      });
+    },
+    onError() {
+      indicator.textContent = "⚠ gagal simpan";
+    },
+  });
+
+  const loaded = save.load();
+  ui.refreshPalette();
+  missionUI.refreshBar();
+
+  if (!save.available) {
+    indicator.textContent = "💾 nonaktif";
+    ui.setStatus("LocalStorage tidak tersedia: progres tidak bisa disimpan.", "error");
+  } else {
+    ui.setStatus(
+      loaded
+        ? "Progres dimuat. Lanjutkan permainanmu!"
+        : "Selamat datang! Ikuti misi Level 1 untuk memulai.",
+      "info"
+    );
+  }
+  save.enable();
+  if (!loaded) missionUI.open();
+
   if (CONFIG.DEBUG) {
-    window.__cc = { world, character, farming, inventory, cooking, unlocks, editor, interpreter };
+    window.__cc = { world, character, farming, inventory, cooking, unlocks, missions, save, editor, interpreter };
   }
 
-  ui.setStatus("Tahap 9 siap. Kumpulkan koin lalu buka blok baru di Toko (🛒)!", "info");
   engine.start();
-  console.log(`${CONFIG.GAME_NAME} v${CONFIG.VERSION} - Tahap 9 siap.`);
+  console.log(`${CONFIG.GAME_NAME} v${CONFIG.VERSION} - Tahap 10 siap.`);
 }
 
 init();

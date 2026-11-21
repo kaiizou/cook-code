@@ -19,7 +19,7 @@
     <!-- LAYAR CODING (kecil) -->
     <section id="code-screen">
       <header class="code-header">
-        <h2>🧩 Kode</h2>
+        <h2>🧩 Kode <small id="save-indicator" class="save-indicator"></small></h2>
         <div class="code-buttons">
           <button id="btn-run" class="btn run">▶ RUN</button>
           <button id="btn-stop" class="btn stop">■ STOP</button>
@@ -27,6 +27,14 @@
           <button id="btn-shop" class="btn shop" title="Toko blok kode">🛒</button>
         </div>
       </header>
+
+      <div id="mission-bar">
+        <div class="mission-text">
+          <strong id="mission-title">Level 1</strong>
+          <span id="mission-goal"></span>
+        </div>
+        <button id="btn-mission" class="btn mission" title="Misi dan tutorial">📘</button>
+      </div>
 
       <div class="code-body">
         <aside id="palette">
@@ -59,6 +67,21 @@
         <button id="btn-shop-close" class="btn stop">✕</button>
       </div>
       <div id="shop-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- MISI DAN TUTORIAL -->
+  <div id="mission-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>📘 Misi &amp; Tutorial</h2>
+        <button id="btn-mission-close" class="btn stop">✕</button>
+      </div>
+      <div id="mission-body" class="modal-body"></div>
+      <div class="modal-foot">
+        <button id="btn-garden-reset" class="btn clear">🌱 Kosongkan kebun</button>
+        <button id="btn-save-reset" class="btn stop">♻ Reset progres</button>
+      </div>
     </div>
   </div>
 
