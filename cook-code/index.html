@@ -23,7 +23,8 @@
         <div class="code-buttons">
           <button id="btn-run" class="btn run">▶ RUN</button>
           <button id="btn-stop" class="btn stop">■ STOP</button>
-          <button id="btn-clear" class="btn clear">🗑</button>
+          <button id="btn-clear" class="btn clear" title="Kosongkan area kerja">🗑</button>
+          <button id="btn-shop" class="btn shop" title="Toko blok kode">🛒</button>
         </div>
       </header>
 
@@ -47,6 +48,18 @@
       <div id="status-bar" class="info">Siap.</div>
     </section>
 
+  </div>
+
+  <!-- TOKO BLOK KODE -->
+  <div id="shop-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>🛒 Toko Blok Kode</h2>
+        <span id="shop-money" class="shop-money">💰 0</span>
+        <button id="btn-shop-close" class="btn stop">✕</button>
+      </div>
+      <div id="shop-body" class="modal-body"></div>
+    </div>
   </div>
 
   <script type="module" src="js/main.js"></script>

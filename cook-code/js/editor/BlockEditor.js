@@ -1,29 +1,42 @@
 import { getBlockDef, defaultParams } from "./blockDefs.js";
 
-// Editor visual: drag and drop dari palette, menyusun urutan, menghapus blok.
-// Data program: [{ uid, id, params }], urutan array = urutan eksekusi.
-// Blok Start selalu ada di paling atas dan tidak bisa dipindah atau dihapus.
+// Editor visual: drag and drop dari palette, menyusun urutan, memasukkan blok
+// ke dalam blok lain (Repeat, If, dst.), dan menghapus blok.
+// Data program: pohon. Daftar paling atas selalu diawali blok Start (tidak bisa dipindah/dihapus).
+// Blok penampung menyimpan isinya di block.children (dan block.elseChildren untuk If-Else).
 
 let uidCounter = 1;
 const newUid = () => "b" + uidCounter++;
+const slotsOf = (id) => getBlockDef(id)?.slots || [];
 
 function createBlock(id) {
-  return { uid: newUid(), id, params: defaultParams(id) };
+  const b = { uid: newUid(), id, params: defaultParams(id) };
+  for (const s of slotsOf(id)) b[s.key] = [];
+  return b;
+}
+
+function hydrate(list) {
+  return list.map((src) => {
+    const b = { uid: newUid(), id: src.id, params: { ...defaultParams(src.id), ...(src.params || {}) } };
+    for (const s of slotsOf(src.id)) b[s.key] = hydrate(src[s.key] || []);
+    return b;
+  });
 }
 
 export class BlockEditor {
-  constructor({ workspace, stack, hint, palette, onMessage, onChange }) {
+  constructor({ workspace, stack, hint, palette, isUnlocked, onMessage, onChange }) {
     this.workspace = workspace;
     this.stack = stack;
     this.hint = hint;
     this.palette = palette;
-    this.onMessage = onMessage || (() => { });
-    this.onChange = onChange || (() => { });
+    this.isUnlocked = isUnlocked || (() => true);
+    this.onMessage = onMessage || (() => {});
+    this.onChange = onChange || (() => {});
 
     this.program = [];
     this.locked = false;    // true saat program sedang berjalan
-    this._pending = null;   // pointer ditekan, belum cukup jauh untuk dianggap drag
-    this._drag = null;      // drag aktif
+    this._pending = null;
+    this._drag = null;
     this._justDragged = false;
 
     this._indicator = document.createElement("div");
@@ -43,11 +56,7 @@ export class BlockEditor {
   }
 
   setProgram(list) {
-    this.program = list.map((b) => ({
-      uid: newUid(),
-      id: b.id,
-      params: { ...defaultParams(b.id), ...(b.params || {}) },
-    }));
+    this.program = hydrate(list);
     if (this.program.length === 0 || this.program[0].id !== "start") {
       this.program.unshift(createBlock("start"));
     }
@@ -65,26 +74,31 @@ export class BlockEditor {
 
   removeBlock(uid) {
     if (this.locked) return;
-    const i = this.program.findIndex((b) => b.uid === uid);
-    if (i <= 0) return; // Start (indeks 0) tidak bisa dihapus
-    const [removed] = this.program.splice(i, 1);
+    const found = this._find(uid);
+    if (!found || (found.list === this.program && found.index === 0)) return; // Start tidak bisa dihapus
+    found.list.splice(found.index, 1);
     this.render();
-    this.onMessage(`Blok ${getBlockDef(removed.id).name} dihapus.`, "info");
+    this.onMessage(`Blok ${getBlockDef(found.block.id).name} dihapus.`, "info");
     this.onChange();
   }
 
-  // Tandai blok bermasalah dengan garis merah
-  setErrors(indices) {
-    const set = new Set(indices);
-    [...this.stack.children].forEach((el, i) => el.classList.toggle("error", set.has(i)));
+  // Tandai blok bermasalah dengan garis merah (berdasarkan uid)
+  setErrors(uids) {
+    const set = new Set(uids.filter(Boolean));
+    this.stack.querySelectorAll(".ws-block").forEach((el) =>
+      el.classList.toggle("error", set.has(el.dataset.uid))
+    );
   }
 
   // Sorot blok yang sedang dijalankan (null = tidak ada)
-  setRunning(index) {
-    [...this.stack.children].forEach((el, i) => el.classList.toggle("running", i === index));
-    if (index !== null && index !== undefined) {
-      this.stack.children[index]?.scrollIntoView({ block: "nearest" });
-    }
+  setRunning(uid) {
+    let target = null;
+    this.stack.querySelectorAll(".ws-block").forEach((el) => {
+      const on = uid != null && el.dataset.uid === uid;
+      el.classList.toggle("running", on);
+      if (on) target = el;
+    });
+    target?.scrollIntoView({ block: "nearest" });
   }
 
   // Kunci editor selama program berjalan
@@ -94,6 +108,34 @@ export class BlockEditor {
     this.stack
       .querySelectorAll("select, input, .ws-del")
       .forEach((el) => (el.disabled = flag));
+  }
+
+  // ---------------- Pohon data ----------------
+
+  _find(uid, list = this.program) {
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (b.uid === uid) return { list, index: i, block: b };
+      for (const s of slotsOf(b.id)) {
+        const r = this._find(uid, b[s.key]);
+        if (r) return r;
+      }
+    }
+    return null;
+  }
+
+  _total(list = this.program) {
+    let n = 0;
+    for (const b of list) {
+      n++;
+      for (const s of slotsOf(b.id)) n += this._total(b[s.key]);
+    }
+    return n;
+  }
+
+  _slotList(slotEl) {
+    if (slotEl === this.stack) return this.program;
+    return this._find(slotEl.dataset.owner)?.block[slotEl.dataset.slot] || null;
   }
 
   // ---------------- Render ----------------
@@ -106,18 +148,27 @@ export class BlockEditor {
 
   _buildBlockEl(block) {
     const def = getBlockDef(block.id);
+    const slots = def.slots || [];
+
     const el = document.createElement("div");
-    el.className = "ws-block" + (block.id === "start" ? " fixed" : "");
+    el.className = "ws-block" + (block.id === "start" ? " fixed" : "") + (slots.length ? " container" : "");
     el.dataset.uid = block.uid;
     el.dataset.id = block.id;
     el.style.background = def.color;
 
+    let head = el;
+    if (slots.length) {
+      head = document.createElement("div");
+      head.className = "ws-head";
+      el.appendChild(head);
+    }
+
     const name = document.createElement("span");
     name.className = "ws-name";
     name.textContent = def.name;
-    el.appendChild(name);
+    head.appendChild(name);
 
-    for (const p of def.params || []) el.appendChild(this._buildParam(block, p));
+    for (const p of def.params || []) head.appendChild(this._buildParam(block, p));
 
     if (block.id !== "start") {
       const del = document.createElement("button");
@@ -125,7 +176,22 @@ export class BlockEditor {
       del.type = "button";
       del.title = "Hapus blok";
       del.textContent = "×";
-      el.appendChild(del);
+      head.appendChild(del);
+    }
+
+    for (const s of slots) {
+      if (s.label) {
+        const label = document.createElement("div");
+        label.className = "ws-slot-label";
+        label.textContent = s.label;
+        el.appendChild(label);
+      }
+      const box = document.createElement("div");
+      box.className = "ws-children";
+      box.dataset.owner = block.uid;
+      box.dataset.slot = s.key;
+      block[s.key].forEach((c) => box.appendChild(this._buildBlockEl(c)));
+      el.appendChild(box);
     }
     return el;
   }
@@ -192,7 +258,7 @@ export class BlockEditor {
       const btn = e.target.closest(".palette-block");
       if (!btn) return;
       const def = getBlockDef(btn.dataset.id);
-      if (def.locked) return; // klik biasa tetap menampilkan info
+      if (!this.isUnlocked(def.id)) return; // klik biasa tetap menampilkan info
       this._arm(e, { source: "palette", id: def.id });
     });
 
@@ -208,7 +274,7 @@ export class BlockEditor {
       true
     );
 
-    // Drag blok yang sudah ada di area kerja
+    // Drag blok yang sudah ada di area kerja (blok paling dalam yang ditekan)
     this.stack.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       if (e.target.closest("select, input, button")) return;
@@ -226,7 +292,7 @@ export class BlockEditor {
   }
 
   _arm(e, info) {
-    if (this.locked) return; // editor terkunci saat program berjalan
+    if (this.locked) return;
     this._pending = { ...info, x: e.clientX, y: e.clientY };
     window.addEventListener("pointermove", this._onMove);
     window.addEventListener("pointerup", this._onUp);
@@ -273,14 +339,36 @@ export class BlockEditor {
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   }
 
-  // Posisi sisip di antara blok lain (Start di indeks 0, jadi minimal 1)
-  _calcIndex(y) {
-    const els = [...this.stack.querySelectorAll(".ws-block:not(.dragging)")];
-    for (let i = 0; i < els.length; i++) {
-      const r = els[i].getBoundingClientRect();
-      if (y < r.top + r.height / 2) return Math.max(i, 1);
+  // Daftar tujuan terdalam di bawah pointer: slot isi blok, atau daftar paling atas
+  _findSlot(e) {
+    for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
+      if (el.closest(".dragging")) continue; // tidak boleh masuk ke dirinya sendiri
+      if (el.classList.contains("ws-children")) return el;
+      if (el === this.stack) return el;
     }
-    return els.length;
+    return this._isOverWorkspace(e) ? this.stack : null;
+  }
+
+  _kids(slot) {
+    return [...slot.children].filter(
+      (c) => c.classList.contains("ws-block") && !c.classList.contains("dragging")
+    );
+  }
+
+  // Posisi sisip di dalam slot (di daftar paling atas minimal 1 karena Start di indeks 0)
+  _calcIndex(slot, y) {
+    const kids = this._kids(slot);
+    for (let i = 0; i < kids.length; i++) {
+      const r = kids[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) return slot === this.stack ? Math.max(i, 1) : i;
+    }
+    return kids.length;
+  }
+
+  _notAllowed(d, slot) {
+    if (d.source === "palette" && d.id === "start") return true;
+    if (d.id === "function" && slot && slot !== this.stack) return true;
+    return false;
   }
 
   _updateDrag(e) {
@@ -292,10 +380,10 @@ export class BlockEditor {
     this.workspace.classList.toggle("drop-active", over);
     this.palette.classList.toggle("trash-active", !over && d.source === "workspace");
 
-    const blockedStart = d.source === "palette" && d.id === "start";
-    if (over && !blockedStart) {
-      const els = [...this.stack.querySelectorAll(".ws-block:not(.dragging)")];
-      this.stack.insertBefore(this._indicator, els[this._calcIndex(e.clientY)] || null);
+    const slot = this._findSlot(e);
+    if (slot && !this._notAllowed(d, slot)) {
+      const kids = this._kids(slot);
+      slot.insertBefore(this._indicator, kids[this._calcIndex(slot, e.clientY)] || null);
     } else {
       this._indicator.remove();
     }
@@ -316,36 +404,50 @@ export class BlockEditor {
 
   _finishDrag(e, cancelled) {
     const d = this._drag;
-    const over = this._isOverWorkspace(e);
-    const idx = over ? this._calcIndex(e.clientY) : -1; // hitung SEBELUM class dragging dilepas
+
+    // Hitung tujuan SEBELUM class dragging dilepas dan SEBELUM DOM berubah
+    const slot = this._findSlot(e);
+    const idx = slot ? this._calcIndex(slot, e.clientY) : -1;
+    const targetList = slot ? this._slotList(slot) : null;
+    const isRoot = slot === this.stack;
+
     this._cleanupDrag();
     if (cancelled) return;
 
     const def = getBlockDef(d.id);
 
     if (d.source === "palette") {
-      if (!over) return;
+      if (!targetList) return;
       if (d.id === "start") {
         this.onMessage("Start sudah ada di paling atas area kerja.", "error");
         return;
       }
-      this.program.splice(idx, 0, createBlock(d.id));
+      if (d.id === "function" && !isRoot) {
+        this.onMessage("Function hanya boleh di level paling atas, tidak boleh di dalam blok lain.", "error");
+        return;
+      }
+      targetList.splice(idx, 0, createBlock(d.id));
       this.render();
-      this.onMessage(`${def.name} ditambahkan. Total ${this.program.length - 1} perintah.`, "info");
+      this.onMessage(`${def.name} ditambahkan. Total ${this._total() - 1} blok.`, "info");
       this.onChange();
       return;
     }
 
     // Sumber: area kerja
-    const from = this.program.findIndex((b) => b.uid === d.uid);
-    if (from <= 0) return;
-    const [block] = this.program.splice(from, 1);
+    const found = this._find(d.uid);
+    if (!found || (found.list === this.program && found.index === 0)) return;
 
-    if (over) {
-      this.program.splice(idx, 0, block);
+    if (targetList) {
+      if (d.id === "function" && !isRoot) {
+        this.onMessage("Function hanya boleh di level paling atas, tidak boleh di dalam blok lain.", "error");
+        return;
+      }
+      found.list.splice(found.index, 1);
+      targetList.splice(idx, 0, found.block);
       this.render();
       this.onMessage(`${def.name} dipindahkan.`, "info");
     } else {
+      found.list.splice(found.index, 1);
       this.render();
       this.onMessage(`${def.name} dihapus.`, "info");
     }

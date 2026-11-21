@@ -3,7 +3,7 @@
 
 export const CONFIG = Object.freeze({
   GAME_NAME: "Code & Cook",
-  VERSION: "0.8.0",
+  VERSION: "0.9.0",
   SAVE_KEY: "codeAndCook_save_v1",
 
   // true = tampilkan info debug di canvas dan aktifkan kontrol keyboard uji.

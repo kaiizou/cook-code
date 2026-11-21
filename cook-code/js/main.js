@@ -5,14 +5,13 @@ import { Character } from "./systems/Character.js";
 import { Farming } from "./systems/Farming.js";
 import { Inventory } from "./systems/Inventory.js";
 import { Cooking } from "./systems/Cooking.js";
+import { Unlocks } from "./systems/Unlocks.js";
 import { GameScreen } from "./ui/GameScreen.js";
 import { UIManager } from "./ui/UIManager.js";
+import { ShopUI } from "./ui/ShopUI.js";
 import { BlockEditor } from "./editor/BlockEditor.js";
 import { Interpreter } from "./editor/Interpreter.js";
-import { validateProgram, describeBlock } from "./editor/validator.js";
-
-// Tidak ada lagi blok stub di Tahap 8 (semua blok dasar sudah aktif).
-const STUB_IDS = [];
+import { validateProgram, describeBlock, describeProgram } from "./editor/validator.js";
 
 function init() {
   const engine = new GameEngine();
@@ -22,16 +21,43 @@ function init() {
   const farming = new Farming(world);
   const inventory = new Inventory();
   const cooking = new Cooking(world, inventory);
-  const gameScreen = new GameScreen(document.getElementById("game-canvas"), world, character, farming, inventory, cooking);
+  const unlocks = new Unlocks(inventory);
+  const gameScreen = new GameScreen(
+    document.getElementById("game-canvas"),
+    world, character, farming, inventory, cooking
+  );
 
   const ui = new UIManager();
   let editor = null;
-  let totalBlocks = 0;
 
   function setRunUI(running) {
     ui.btnRun.disabled = running;
     ui.btnClear.disabled = running;
     editor.setLocked(running);
+  }
+
+  // Kondisi untuk If dan While, dihitung dari petak tempat chef berdiri
+  function conditions(key, announce = false) {
+    const plot = farming.getPlot(character.col, character.row);
+    let value = false;
+
+    if (key === "ready") value = !!plot && farming.isReady(plot);
+    else if (key === "growing") value = !!plot && !!plot.crop && !farming.isReady(plot);
+    else if (key === "empty") value = !!plot && !plot.crop;
+    else if (key === "hasHarvest") {
+      value = Object.entries(inventory.items).some(
+        ([id, qty]) => qty > 0 && inventory.getItemInfo(id).sellPrice > 0
+      );
+    }
+
+    if (announce) {
+      farming.pop(
+        character.col, character.row,
+        value ? "✔ Ya" : "✘ Tidak",
+        value ? "#c8f7a8" : "#ffb3a8"
+      );
+    }
+    return value;
   }
 
   // Membungkus aksi: tunggu sebentar (animasi), jalankan efek, tampilkan pesan.
@@ -63,52 +89,53 @@ function init() {
     sell: action((b) => cooking.sell(b.params.item, character.col, character.row), 0.6),
   };
 
-  // Handler sementara untuk blok yang belum punya efek (jika ada)
-  for (const id of STUB_IDS) {
-    handlers[id] = async (block, api) => {
-      const finished = await api.sleep(0.5);
-      return finished ? { ok: true } : { ok: false, cancelled: true };
-    };
-  }
-
   const interpreter = new Interpreter({
     character,
     handlers,
-    onStep(index, block) {
-      editor.setRunning(index);
-      const stub = STUB_IDS.includes(block.id) ? " (efek asli menyusul di tahap berikutnya)" : "";
-      ui.setStatus(`Menjalankan ${index}/${totalBlocks}: ${describeBlock(block)}${stub}`, "info");
+    conditions,
+    onStep(block) {
+      editor.setRunning(block.uid);
+      ui.setStatus(`Menjalankan: ${describeBlock(block)}`, "info");
     },
     onFinish(result) {
       editor.setRunning(null);
       setRunUI(false);
 
       if (result.status === "done") {
-        ui.setStatus(`Program selesai. ${result.count} perintah dijalankan.`, "ok");
+        ui.setStatus(`Program selesai. ${result.count} aksi dijalankan.`, "ok");
       } else if (result.status === "stopped") {
         ui.setStatus("Program dihentikan.", "ok");
       } else {
-        if (result.index >= 0) editor.setErrors([result.index]);
+        if (result.uid) editor.setErrors([result.uid]);
         ui.showErrors([{ message: result.message }]);
         ui.setStatus(result.message, "error");
       }
     },
   });
 
-  // Urutan penting: karakter, farming, cooking, interpreter, lalu render layar
+  const shop = new ShopUI({
+    inventory,
+    unlocks,
+    onMessage: (text, type) => ui.setStatus(text, type),
+    onUnlock: () => ui.refreshPalette(),
+  });
+
+  // Urutan penting: karakter, farming, cooking, interpreter, toko, lalu render layar
   engine.register(character);
   engine.register(farming);
   engine.register(cooking);
   engine.register(interpreter);
+  engine.register(shop);
   engine.register(gameScreen);
 
   ui.init({
+    unlocks,
     onRun() {
       if (interpreter.running) return;
 
       const program = editor.getProgram();
-      const result = validateProgram(program);
-      editor.setErrors(result.errors.map((e) => e.index));
+      const result = validateProgram(program, (id) => unlocks.isUnlocked(id));
+      editor.setErrors(result.errors.map((e) => e.uid));
 
       if (!result.ok) {
         ui.showErrors(result.errors);
@@ -116,8 +143,7 @@ function init() {
         return;
       }
 
-      totalBlocks = program.length - 1;
-      ui.showSequence(program.map(describeBlock));
+      ui.showSequence(describeProgram(program));
       character.reset(); // setiap RUN dimulai dari posisi awal (tanaman tidak direset)
       setRunUI(true);
       interpreter.run(program);
@@ -138,14 +164,17 @@ function init() {
     stack: document.getElementById("stack"),
     hint: document.getElementById("stack-hint"),
     palette: document.getElementById("palette"),
+    isUnlocked: (id) => unlocks.isUnlocked(id),
     onMessage: (text, type) => ui.setStatus(text, type),
   });
 
-  if (CONFIG.DEBUG) window.__cc = { world, character, farming, inventory, cooking, editor, interpreter };
+  if (CONFIG.DEBUG) {
+    window.__cc = { world, character, farming, inventory, cooking, unlocks, editor, interpreter };
+  }
 
-  ui.setStatus("Tahap 8 siap: Dapur & Pasar aktif. Masak hidangan di kompor/meja dan jual di pasar!", "info");
+  ui.setStatus("Tahap 9 siap. Kumpulkan koin lalu buka blok baru di Toko (🛒)!", "info");
   engine.start();
-  console.log(`${CONFIG.GAME_NAME} v${CONFIG.VERSION} - Tahap 8 siap (Cooking & Market System).`);
+  console.log(`${CONFIG.GAME_NAME} v${CONFIG.VERSION} - Tahap 9 siap.`);
 }
 
 init();
